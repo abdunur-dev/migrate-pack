@@ -31,10 +31,11 @@
   "scripts": {
     "build": "tsc",
     "start": "tsx src/cli.ts",
-    "test": "node --import tsx --test test/app-del.test.ts test/renames.test.ts test/reorder-args.test.ts test/manual.test.ts test/cli.test.ts test/runTests.test.ts",
+    "test": "node --import tsx --test test/app-del.test.ts test/renames.test.ts test/reorder-args.test.ts test/manual.test.ts test/cli.test.ts test/runTests.test.ts test/suggest.test.ts",
     "prepublishOnly": "npm run build && npm test"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.13.0",
     "diff": "^8.0.2",
     "ts-morph": "^24.0.0",
     "yaml": "^2.6.0"

@@ -5,6 +5,7 @@ import { parseArgs } from "node:util";
 import { createTwoFilesPatch } from "diff";
 import { loadPack } from "./pack";
 import { scanRepo } from "./scan";
+import { anthropicCallModel, CallModel, MODEL, suggestFix } from "./suggest";
 
 // Resolved from this file's location (src/ under tsx, dist/ when built), never from the cwd.
 const PACKAGE_ROOT = join(__dirname, "..");
@@ -17,18 +18,22 @@ const HELP = `migrate-pack: migrate Express 4 code to Express 5 using a rules fi
 
 Usage:
   migrate-pack run        --repo <path> [--pack <rules.yaml>] [--dry-run]
-  migrate-pack fix-manual --repo <path> [--pack <rules.yaml>] [--dry-run]
+  migrate-pack fix-manual --repo <path> [--pack <rules.yaml>] [--dry-run] [--item <n> [--suggest]]
 
 Commands:
   run           Apply automatic rules and list items that need manual review.
   fix-manual    Show each manual review item with the code around it.
-                Currently read-only: it never changes files.
+                Never changes files.
 
 Options:
   --repo <path>     Repo to migrate (required). node_modules and .git are skipped.
   --pack <path>     Rules file to apply. Default: the bundled Express 4 -> 5 pack.
   --dry-run         run: print a unified diff and write nothing.
-                    fix-manual: accepted; it writes nothing either way for now.
+                    fix-manual: accepted; it writes nothing either way.
+  --item <n>        fix-manual: show only manual item number n (as numbered in the listing).
+  --suggest         fix-manual, with --item: ask an AI model (${MODEL}) to propose a fix
+                    and print it as a diff. Sends only the rule note and 15 lines of code
+                    around the item. Needs ANTHROPIC_API_KEY. Writes nothing.
   -h, --help        Show this help.
   -v, --version     Show the version.
 `;
@@ -38,10 +43,18 @@ export interface Io {
   err: (text: string) => void;
 }
 
+export interface Deps {
+  env: NodeJS.ProcessEnv;
+  /** Builds the model caller from the API key. Tests replace this with a mock. */
+  makeCallModel: (apiKey: string) => CallModel;
+}
+
 const defaultIo: Io = {
   out: (text) => process.stdout.write(text),
   err: (text) => process.stderr.write(text),
 };
+
+const defaultDeps: Deps = { env: process.env, makeCallModel: anthropicCallModel };
 
 function version(): string {
   return JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8")).version;
@@ -92,13 +105,36 @@ export function codeContext(text: string, line: number, radius = CONTEXT_RADIUS)
   return out.join("\n");
 }
 
-function fixManual(repoArg: string, packPath: string, dryRun: boolean, io: Io): number {
-  const pack = loadPack(packPath);
-  const files = scanRepo(resolve(repoArg), pack);
+interface FixManualOptions {
+  repo: string;
+  packPath: string;
+  dryRun: boolean;
+  item?: number;
+  suggest: boolean;
+}
+
+async function fixManual(opts: FixManualOptions, io: Io, deps: Deps): Promise<number> {
+  // Check the key before doing any work, so a missing key fails fast and clearly.
+  const apiKey = deps.env.ANTHROPIC_API_KEY;
+  if (opts.suggest && !apiKey) {
+    io.err(
+      "migrate-pack: --suggest needs an Anthropic API key in the ANTHROPIC_API_KEY environment variable.\n" +
+        "  Set it and try again, or leave out --suggest to only list the items.\n",
+    );
+    return 1;
+  }
+
+  const pack = loadPack(opts.packPath);
+  const files = scanRepo(resolve(opts.repo), pack);
   const items = files.flatMap((f) => f.manual.map((m) => ({ ...m, file: f })));
   const pending = files.filter((f) => f.after !== f.before).length;
 
-  const lines = [`migrate-pack fix-manual: ${pack.name}${dryRun ? " (dry run)" : ""}`, `  pack: ${packPath}`];
+  if (opts.item !== undefined && (opts.item < 1 || opts.item > items.length)) {
+    io.err(`migrate-pack: --item ${opts.item} does not exist; there are ${items.length} manual item(s).\n`);
+    return 2;
+  }
+
+  const lines = [`migrate-pack fix-manual: ${pack.name}${opts.dryRun ? " (dry run)" : ""}`, `  pack: ${opts.packPath}`];
   if (pending > 0) {
     lines.push(
       `  note: ${pending} file(s) still have automatic edits pending (run \`migrate-pack run\` first).`,
@@ -108,6 +144,7 @@ function fixManual(repoArg: string, packPath: string, dryRun: boolean, io: Io): 
   lines.push("");
 
   items.forEach((item, i) => {
+    if (opts.item !== undefined && opts.item !== i + 1) return;
     lines.push(
       `[${i + 1}/${items.length}] ${item.file.rel}:${item.line}  ${item.ruleId}`,
       `  ${item.note}`,
@@ -116,12 +153,28 @@ function fixManual(repoArg: string, packPath: string, dryRun: boolean, io: Io): 
     );
   });
 
-  lines.push(`${items.length} manual item(s). Nothing was changed: fix-manual is read-only for now.`);
+  if (!opts.suggest) {
+    lines.push(`${items.length} manual item(s). Nothing was changed: fix-manual never writes files.`);
+    io.out(lines.join("\n") + "\n");
+    return 0;
+  }
+
   io.out(lines.join("\n") + "\n");
+  const item = items[opts.item! - 1];
+  io.out(`Asking ${MODEL} for a fix (sending the rule note and 15 lines of code only)...\n\n`);
+
+  const suggestion = await suggestFix(
+    { rel: item.file.rel, text: item.file.after, line: item.line, note: item.note },
+    deps.makeCallModel(apiKey!),
+  );
+
+  if (suggestion.explanation) io.out(`Model: ${suggestion.explanation}\n\n`);
+  io.out(suggestion.changed ? suggestion.diff : "The model proposed no change.\n");
+  io.out(`\nNothing was written. This is an AI suggestion: review it, then apply it yourself if it is right.\n`);
   return 0;
 }
 
-export function main(argv: string[], io: Io = defaultIo): number {
+export async function main(argv: string[], io: Io = defaultIo, deps: Deps = defaultDeps): Promise<number> {
   try {
     const { values, positionals } = parseArgs({
       args: argv,
@@ -130,6 +183,8 @@ export function main(argv: string[], io: Io = defaultIo): number {
         pack: { type: "string" },
         repo: { type: "string" },
         "dry-run": { type: "boolean", default: false },
+        item: { type: "string" },
+        suggest: { type: "boolean", default: false },
         help: { type: "boolean", short: "h", default: false },
         version: { type: "boolean", short: "v", default: false },
       },
@@ -152,9 +207,28 @@ export function main(argv: string[], io: Io = defaultIo): number {
 
     const packPath = values.pack ? resolve(values.pack) : DEFAULT_PACK_PATH;
     const dryRun = values["dry-run"] === true;
-    return command === "run"
-      ? run(values.repo, packPath, dryRun, io)
-      : fixManual(values.repo, packPath, dryRun, io);
+    if (command === "run") {
+      if (values.item !== undefined || values.suggest) {
+        io.err("migrate-pack: --item and --suggest only apply to fix-manual.\n");
+        return 2;
+      }
+      return run(values.repo, packPath, dryRun, io);
+    }
+
+    let item: number | undefined;
+    if (values.item !== undefined) {
+      item = Number(values.item);
+      if (!Number.isInteger(item)) {
+        io.err(`migrate-pack: --item must be a whole number, got "${values.item}".\n`);
+        return 2;
+      }
+    }
+    if (values.suggest && item === undefined) {
+      io.err("migrate-pack: --suggest needs --item <n> to pick one manual item.\n");
+      return 2;
+    }
+
+    return await fixManual({ repo: values.repo, packPath, dryRun, item, suggest: values.suggest === true }, io, deps);
   } catch (err) {
     io.err(`migrate-pack: ${(err as Error).message}\n`);
     return 1;
@@ -162,5 +236,7 @@ export function main(argv: string[], io: Io = defaultIo): number {
 }
 
 if (require.main === module) {
-  process.exitCode = main(process.argv.slice(2));
+  main(process.argv.slice(2)).then((code) => {
+    process.exitCode = code;
+  });
 }

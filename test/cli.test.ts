@@ -5,14 +5,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_PACK_PATH, main } from "../src/cli";
 
-function capture(argv: string[]) {
+async function capture(argv: string[]) {
   let out = "";
   let err = "";
-  const code = main(argv, { out: (t) => (out += t), err: (t) => (err += t) });
+  const code = await main(argv, { out: (t) => (out += t), err: (t) => (err += t) });
   return { code, out, err };
 }
 
-test("without --pack, the bundled rules.yaml is used, independent of the current directory", () => {
+test("without --pack, the bundled rules.yaml is used, independent of the current directory", async () => {
   const repo = mkdtempSync(join(tmpdir(), "migrate-pack-repo-"));
   const elsewhere = mkdtempSync(join(tmpdir(), "migrate-pack-cwd-")); // has no rules.yaml
   const source = `app.del("/users/:id", handler);\n`;
@@ -21,7 +21,7 @@ test("without --pack, the bundled rules.yaml is used, independent of the current
   const originalCwd = process.cwd();
   process.chdir(elsewhere);
   try {
-    const { code, out, err } = capture(["run", "--repo", repo, "--dry-run"]);
+    const { code, out, err } = await capture(["run", "--repo", repo, "--dry-run"]);
 
     assert.equal(err, "");
     assert.equal(code, 0);
@@ -37,7 +37,7 @@ test("without --pack, the bundled rules.yaml is used, independent of the current
   }
 });
 
-test("fix-manual prints each manual item with surrounding code and writes nothing", () => {
+test("fix-manual prints each manual item with surrounding code and writes nothing", async () => {
   const repo = mkdtempSync(join(tmpdir(), "migrate-pack-repo-"));
   const source = [
     `const express = require("express");`,
@@ -51,7 +51,7 @@ test("fix-manual prints each manual item with surrounding code and writes nothin
   writeFileSync(join(repo, "server.js"), source);
 
   try {
-    const { code, out, err } = capture(["fix-manual", "--repo", repo]);
+    const { code, out, err } = await capture(["fix-manual", "--repo", repo]);
 
     assert.equal(err, "");
     assert.equal(code, 0);
@@ -67,8 +67,8 @@ test("fix-manual prints each manual item with surrounding code and writes nothin
   }
 });
 
-test("--help and --version", () => {
-  const help = capture(["--help"]);
+test("--help and --version", async () => {
+  const help = await capture(["--help"]);
   assert.equal(help.code, 0);
   assert.equal(help.err, "");
 
@@ -89,7 +89,7 @@ test("--help and --version", () => {
   }
 
   const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf8"));
-  const version = capture(["--version"]);
+  const version = await capture(["--version"]);
   assert.equal(version.code, 0);
   assert.equal(version.out, `${pkg.version}\n`);
 });

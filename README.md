@@ -25,12 +25,18 @@ npm test
 
 ```
 migrate-pack run --repo <path> [--pack <rules.yaml>] [--dry-run]
-migrate-pack fix-manual --repo <path> [--pack <rules.yaml>] [--dry-run]
+migrate-pack fix-manual --repo <path> [--pack <rules.yaml>] [--dry-run] [--item <n> [--suggest]]
 migrate-pack --help
 migrate-pack --version
 ```
 
-`fix-manual` lists every manual review item with its note and the code around it: the reported line plus 2 lines above and below. It is read-only for now and never changes files.
+`fix-manual` lists every manual review item with its note and the code around it: the reported line plus 2 lines above and below. It never changes files.
+
+`fix-manual --item <n> --suggest` asks an AI model (`claude-opus-5-5`, via the Anthropic API) to propose a fix for one item, and prints the proposal as a diff.
+- It needs an `ANTHROPIC_API_KEY` environment variable.
+- It sends only the rule's note and the 15 lines of code around the item. It does not send file names, paths or any other code.
+- It writes nothing. Review the diff and apply it yourself if it is right.
+- AI suggestions can be wrong.
 
 If you leave out `--pack`, the tool uses the Express 4 to 5 pack bundled with migrate-pack (`rules.yaml`). It finds that file inside the package, not in the current directory. Pass `--pack <path>` to use your own rules file.
 
