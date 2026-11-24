@@ -298,6 +298,21 @@ export default function Home() {
           </div>
         </Reveal>
 
+        <Reveal className="row pad cta" id="maintainers">
+          <span className="eyebrow">For maintainers</span>
+          <h2 className="section">Shipping a breaking release?</h2>
+          <p className="lede">
+            Write a migration pack once, and your users can fix their code with one command. Safe changes are edited
+            automatically. Anything unclear is reported by file and line. I&apos;ll help write the first pack for your
+            library.
+          </p>
+          <div className="actions">
+            <a className="btn" href={`${GITHUB_URL}/issues/new`}>
+              Open an issue on GitHub <span className="arr">→</span>
+            </a>
+          </div>
+        </Reveal>
+
         <Reveal className="row pad cta">
           <h2 className="section">Preview the changes on your project.</h2>
           <p className="lede">
