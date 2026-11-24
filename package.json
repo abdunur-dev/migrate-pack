@@ -6,7 +6,11 @@
   "author": "Abdurhaman Nur",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/REPLACE-ME/migrate-pack.git"
+    "url": "git+https://github.com/abdunur-dev/migrate-pack.git"
+  },
+  "homepage": "https://github.com/abdunur-dev/migrate-pack#readme",
+  "bugs": {
+    "url": "https://github.com/abdunur-dev/migrate-pack/issues"
   },
   "keywords": [
     "express",

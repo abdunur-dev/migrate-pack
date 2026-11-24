@@ -2,6 +2,16 @@
 
 migrate-pack migrates Express 4 code to Express 5 by applying the rules in a YAML rules file (a "pack") to a JavaScript/TypeScript repo. This is an early version: it covers a small number of changes and is not a complete migration.
 
+## Quick start
+
+Requires Node 20+. Preview what would change. This writes nothing:
+
+```sh
+npx migrate-pack run --repo <path-to-your-project> --dry-run
+```
+
+Run it again without `--dry-run` to apply the edits. Do that on a clean git working tree, because files are overwritten with no backup.
+
 ## Why
 
 When a library ships a breaking release, the people who know the changes best are its maintainers. The idea is that maintainers publish a rules file describing the migration, and a generic tool applies it for their users. That gives users safe, reviewable edits for the mechanical changes, and a clear list of what still needs a human. The pack in this repo (`rules.yaml`) was written for this project. It is not published by the Express team.
@@ -14,14 +24,7 @@ When a library ships a breaking release, the people who know the changes best ar
 - **Manual rules** report a file and line with a note, and never edit.
 - When a call is ambiguous, the tool reports it and does not guess. For example, `res.json(404, someVar)` or `res.json(200, 201)` is reported for review instead of being rewritten.
 
-## Install and usage
-
-Requires Node 20+.
-
-```sh
-npm install
-npm test
-```
+## Usage
 
 ```
 migrate-pack run --repo <path> [--pack <rules.yaml>] [--dry-run]
@@ -43,20 +46,13 @@ If you leave out `--pack`, the tool uses the Express 4 to 5 pack bundled with mi
 Preview the changes. `--dry-run` prints a unified diff and writes nothing:
 
 ```sh
-npm start -- run --repo /path/to/your/app --dry-run
+npx migrate-pack run --repo /path/to/your/app --dry-run
 ```
 
 Apply the changes, which edits the files in place:
 
 ```sh
-npm start -- run --repo /path/to/your/app
-```
-
-Or build first and run the compiled CLI:
-
-```sh
-npm run build
-node dist/cli.js run --repo /path/to/your/app [--dry-run]
+npx migrate-pack run --repo /path/to/your/app
 ```
 
 Without `--dry-run`, files are overwritten with no backup. Run it on a clean git working tree so you can review and revert with git.
@@ -103,9 +99,26 @@ These report `file:line` and never edit:
 ## Roadmap
 
 - Check that `app`, `req` and `res` actually come from `express()` or route handlers, instead of matching by name.
-- Hand ambiguous items to an AI agent that proposes a fix for a human to review. Today, those items are only reported.
+- Extend AI help for ambiguous items. Today, `fix-manual --suggest` proposes a fix for one item at a time as a diff, and a human applies it.
 - More rules from the Express 5 migration guide.
 - Packs for other libraries.
+
+## Developing this tool
+
+From a clone of this repo:
+
+```sh
+npm install
+npm test
+```
+
+Run the CLI from source, or build it and run the compiled version:
+
+```sh
+npm start -- run --repo /path/to/your/app --dry-run
+npm run build
+node dist/cli.js run --repo /path/to/your/app --dry-run
+```
 
 ## Check against the official guide
 
