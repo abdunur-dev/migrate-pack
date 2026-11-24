@@ -1,6 +1,6 @@
 {
   "name": "migrate-pack",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Migrate Express 4 code to Express 5 using a YAML rules file. AST edits with ts-morph; ambiguous cases are reported, not guessed.",
   "license": "MIT",
   "author": "Abdurhaman Nur",
