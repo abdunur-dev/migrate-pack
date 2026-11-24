@@ -1,5 +1,5 @@
 import { CallExpression, Node, Project, SourceFile, SyntaxKind } from "ts-morph";
-import type { CallMatch, Match, RouteStringMatch, Rule } from "./pack";
+import type { CallMatch, Match, ReorderSpec, RouteStringMatch, Rule } from "./pack";
 
 export interface Edit {
   ruleId: string;
@@ -28,11 +28,44 @@ function calleeParts(call: CallExpression): { object: string; method: string } |
   return { object: target.getText(), method: callee.getName() };
 }
 
+/** A literal written in the source whose runtime value can never be a number. */
+function isDefinitelyNotNumber(node: Node): boolean {
+  return (
+    Node.isObjectLiteralExpression(node) ||
+    Node.isArrayLiteralExpression(node) ||
+    Node.isStringLiteral(node) ||
+    Node.isNoSubstitutionTemplateLiteral(node) ||
+    Node.isTemplateExpression(node) ||
+    Node.isTrueLiteral(node) ||
+    Node.isFalseLiteral(node) ||
+    Node.isNullLiteral(node)
+  );
+}
+
+/**
+ * Which argument is the status and which is the value, or undefined if the call must not be
+ * rewritten. Mirrors Express 4: with 2 args, a numeric second arg is the status; otherwise
+ * the first arg is. We only rewrite when that is decidable from literals in the source.
+ */
+function reorderPlan(call: CallExpression, spec: ReorderSpec): { status: Node; value: Node } | undefined {
+  const args = call.getArguments();
+  if (args.length !== 2) return undefined;
+  const [first, second] = args;
+
+  if (spec.forms.includes("status-last") && Node.isNumericLiteral(second)) {
+    return { status: second, value: first };
+  }
+  if (spec.forms.includes("status-first") && Node.isNumericLiteral(first) && isDefinitelyNotNumber(second)) {
+    return { status: first, value: second };
+  }
+  return undefined;
+}
+
 function isCallMatch(call: CallExpression, m: CallMatch): boolean {
   const parts = calleeParts(call);
   if (!parts || parts.object !== m.object || parts.method !== m.method) return false;
   if (m.args !== undefined && call.getArguments().length !== m.args) return false;
-  if (m.exceptReorderable && canReorder(call)) return false;
+  if (m.exceptReorder && reorderPlan(call, m.exceptReorder)) return false;
   return true;
 }
 
@@ -60,12 +93,6 @@ function findCalls(sf: SourceFile, match: Match): CallExpression[] {
     .filter((call) => (match.kind === "call" ? isCallMatch(call, match) : isRouteStringMatch(call, match)));
 }
 
-/** reorder-args applies only to exactly 2 arguments where the second is a number literal. */
-function canReorder(call: CallExpression): boolean {
-  const args = call.getArguments();
-  return args.length === 2 && Node.isNumericLiteral(args[1]);
-}
-
 export function applyRules(sf: SourceFile, rules: Rule[]): FileResult {
   const before = sf.getFullText();
   const edits: Edit[] = [];
@@ -89,10 +116,13 @@ export function applyRules(sf: SourceFile, rules: Rule[]): FileResult {
       if (rule.type === "deterministic") {
         callee.getNameNode().replaceWithText(rule.replace!.method);
         edits.push({ ruleId: rule.id, line });
-      } else if (rule.type === "reorder-args" && canReorder(call)) {
-        const [value, status] = call.getArguments().map((a) => a.getText());
+      } else if (rule.type === "reorder-args") {
+        const plan = reorderPlan(call, rule.reorder!);
+        if (!plan) continue;
         const object = callee.getExpression().getText();
-        call.replaceWithText(`${object}.${rule.reorder!.chain}(${status}).${callee.getName()}(${value})`);
+        call.replaceWithText(
+          `${object}.${rule.reorder!.chain}(${plan.status.getText()}).${callee.getName()}(${plan.value.getText()})`,
+        );
         edits.push({ ruleId: rule.id, line });
       }
     }

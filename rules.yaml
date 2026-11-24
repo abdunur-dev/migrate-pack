@@ -40,16 +40,22 @@ rules:
     replace:
       method: sendFile
 
-  # reorder-args: res.json(obj, <number>) -> res.status(<number>).json(obj).
-  # Applied only when there are exactly 2 arguments and the second is a number literal.
-  # Anything else (variable status, status first, 1 or 3 args) is left untouched.
+  # reorder-args, exactly 2 arguments only. Express 4 picks the status at runtime:
+  # if the 2nd arg is a number it is the status, otherwise the 1st arg is.
+  #   status-last:  res.json(obj, <number literal>) -> res.status(<number>).json(obj)
+  #   status-first: res.json(<number literal>, obj) -> res.status(<number>).json(obj)
+  #                 only when obj is an object/array/string/template/true/false/null literal.
+  #                 res.json(404, someVar) is NOT rewritten: if someVar is a number at runtime,
+  #                 Express 4 uses it as the status, so the rewrite could change behavior.
+  # status-last is checked first, so res.json(200, 201) -> res.status(201).json(200), as in Express 4.
   - id: res-json-status-arg
-    description: Replace res.json(obj, status) with res.status(status).json(obj) (signature removed in Express 5)
+    description: Replace res.json(obj, status) / res.json(status, obj) with res.status(status).json(obj) (both signatures removed in Express 5)
     type: reorder-args
     match:
       call: res.json
     reorder:
       chain: status
+      forms: [status-last, status-first]
 
   # manual: reported as file + line, never edited.
   - id: res-json-two-args-unhandled
@@ -58,7 +64,7 @@ rules:
     match:
       call: res.json
       args: 2
-      exceptReorderable: true
+      exceptRewrittenBy: res-json-status-arg
     note: Express 5 removed res.json(obj, status). Rewrite by hand as res.status(status).json(obj) once you have confirmed which argument is the status.
 
   - id: req-param-removed
