@@ -1,18 +1,38 @@
 {
   "name": "migrate-pack",
   "version": "0.1.0",
-  "private": true,
-  "description": "Apply YAML migration packs to a JS/TS repo using AST edits (ts-morph).",
+  "description": "Migrate Express 4 code to Express 5 using a YAML rules file. AST edits with ts-morph; ambiguous cases are reported, not guessed.",
+  "license": "MIT",
+  "author": "Abdurhaman Nur",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/REPLACE-ME/migrate-pack.git"
+  },
+  "keywords": [
+    "express",
+    "express5",
+    "migration",
+    "codemod",
+    "ts-morph",
+    "ast",
+    "cli"
+  ],
   "bin": {
     "migrate-pack": "dist/cli.js"
   },
+  "files": [
+    "dist",
+    "rules.yaml",
+    "README.md"
+  ],
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "build": "tsc",
     "start": "tsx src/cli.ts",
-    "test": "node --import tsx --test test/app-del.test.ts test/renames.test.ts test/reorder-args.test.ts test/manual.test.ts"
+    "test": "node --import tsx --test test/app-del.test.ts test/renames.test.ts test/reorder-args.test.ts test/manual.test.ts test/cli.test.ts",
+    "prepublishOnly": "npm run build && npm test"
   },
   "dependencies": {
     "diff": "^8.0.2",

@@ -23,23 +23,31 @@ npm install
 npm test
 ```
 
+```
+migrate-pack run --repo <path> [--pack <rules.yaml>] [--dry-run]
+migrate-pack --help
+migrate-pack --version
+```
+
+If you leave out `--pack`, the tool uses the Express 4 to 5 pack bundled with migrate-pack (`rules.yaml`). It finds that file inside the package, not in the current directory. Pass `--pack <path>` to use your own rules file.
+
 Preview the changes. `--dry-run` prints a unified diff and writes nothing:
 
 ```sh
-npm start -- run --pack rules.yaml --repo /path/to/your/app --dry-run
+npm start -- run --repo /path/to/your/app --dry-run
 ```
 
 Apply the changes, which edits the files in place:
 
 ```sh
-npm start -- run --pack rules.yaml --repo /path/to/your/app
+npm start -- run --repo /path/to/your/app
 ```
 
 Or build first and run the compiled CLI:
 
 ```sh
 npm run build
-node dist/cli.js run --pack rules.yaml --repo /path/to/your/app [--dry-run]
+node dist/cli.js run --repo /path/to/your/app [--dry-run]
 ```
 
 Without `--dry-run`, files are overwritten with no backup. Run it on a clean git working tree so you can review and revert with git.
