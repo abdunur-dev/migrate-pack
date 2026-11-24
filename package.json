@@ -31,7 +31,7 @@
   "scripts": {
     "build": "tsc",
     "start": "tsx src/cli.ts",
-    "test": "node --import tsx --test test/app-del.test.ts test/renames.test.ts test/reorder-args.test.ts test/manual.test.ts test/cli.test.ts",
+    "test": "node --import tsx --test test/app-del.test.ts test/renames.test.ts test/reorder-args.test.ts test/manual.test.ts test/cli.test.ts test/runTests.test.ts",
     "prepublishOnly": "npm run build && npm test"
   },
   "dependencies": {

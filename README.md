@@ -25,9 +25,12 @@ npm test
 
 ```
 migrate-pack run --repo <path> [--pack <rules.yaml>] [--dry-run]
+migrate-pack fix-manual --repo <path> [--pack <rules.yaml>] [--dry-run]
 migrate-pack --help
 migrate-pack --version
 ```
+
+`fix-manual` lists every manual review item with its note and the code around it: the reported line plus 2 lines above and below. It is read-only for now and never changes files.
 
 If you leave out `--pack`, the tool uses the Express 4 to 5 pack bundled with migrate-pack (`rules.yaml`). It finds that file inside the package, not in the current directory. Pass `--pack <path>` to use your own rules file.
 

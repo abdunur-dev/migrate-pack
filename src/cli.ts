@@ -1,30 +1,37 @@
 #!/usr/bin/env node
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { extname, join, relative, resolve } from "node:path";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { createTwoFilesPatch } from "diff";
-import { Project } from "ts-morph";
-import { applyRules, Edit, ManualItem } from "./engine";
 import { loadPack } from "./pack";
+import { scanRepo } from "./scan";
 
 // Resolved from this file's location (src/ under tsx, dist/ when built), never from the cwd.
 const PACKAGE_ROOT = join(__dirname, "..");
 export const DEFAULT_PACK_PATH = join(PACKAGE_ROOT, "rules.yaml");
 
+/** Lines of code shown for each manual item: the item's line plus this many above and below. */
+const CONTEXT_RADIUS = 2;
+
 const HELP = `migrate-pack: migrate Express 4 code to Express 5 using a rules file
 
 Usage:
-  migrate-pack run --repo <path> [--pack <rules.yaml>] [--dry-run]
+  migrate-pack run        --repo <path> [--pack <rules.yaml>] [--dry-run]
+  migrate-pack fix-manual --repo <path> [--pack <rules.yaml>] [--dry-run]
+
+Commands:
+  run           Apply automatic rules and list items that need manual review.
+  fix-manual    Show each manual review item with the code around it.
+                Currently read-only: it never changes files.
 
 Options:
   --repo <path>     Repo to migrate (required). node_modules and .git are skipped.
   --pack <path>     Rules file to apply. Default: the bundled Express 4 -> 5 pack.
-  --dry-run         Print a unified diff and write nothing.
+  --dry-run         run: print a unified diff and write nothing.
+                    fix-manual: accepted; it writes nothing either way for now.
   -h, --help        Show this help.
   -v, --version     Show the version.
 `;
-
-const SKIP_DIRS = new Set(["node_modules", ".git"]);
 
 export interface Io {
   out: (text: string) => void;
@@ -40,54 +47,21 @@ function version(): string {
   return JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8")).version;
 }
 
-function findFiles(dir: string, out: string[] = []): string[] {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (!SKIP_DIRS.has(entry.name)) findFiles(full, out);
-    } else if (
-      entry.isFile() &&
-      (extname(entry.name) === ".js" || extname(entry.name) === ".ts") &&
-      !entry.name.endsWith(".d.ts")
-    ) {
-      out.push(full);
-    }
-  }
-  return out;
-}
-
 function run(repoArg: string, packPath: string, dryRun: boolean, io: Io): number {
-  const repo = resolve(repoArg);
   const pack = loadPack(packPath);
-  const files = findFiles(repo);
+  const files = scanRepo(resolve(repoArg), pack);
 
-  const project = new Project({
-    compilerOptions: { allowJs: true },
-    skipAddingFilesFromTsConfig: true,
-    skipFileDependencyResolution: true,
-  });
-
-  const changed: string[] = [];
-  const edits: (Edit & { file: string })[] = [];
-  const manual: (ManualItem & { file: string })[] = [];
-
-  for (const file of files) {
-    const rel = relative(repo, file).split("\\").join("/");
-    const result = applyRules(project.addSourceFileAtPath(file), pack.rules);
-
-    result.edits.forEach((e) => edits.push({ ...e, file: rel }));
-    result.manual.forEach((m) => manual.push({ ...m, file: rel }));
-
-    if (result.after !== result.before) {
-      changed.push(rel);
-      if (dryRun) {
-        io.out(createTwoFilesPatch(`a/${rel}`, `b/${rel}`, result.before, result.after));
-      } else {
-        writeFileSync(file, result.after);
-      }
+  const changed = files.filter((f) => f.after !== f.before);
+  for (const f of changed) {
+    if (dryRun) {
+      io.out(createTwoFilesPatch(`a/${f.rel}`, `b/${f.rel}`, f.before, f.after));
+    } else {
+      writeFileSync(f.file, f.after);
     }
   }
 
+  const edits = files.flatMap((f) => f.edits);
+  const manual = files.flatMap((f) => f.manual.map((m) => ({ ...m, rel: f.rel })));
   const perRule = new Map<string, number>();
   for (const e of edits) perRule.set(e.ruleId, (perRule.get(e.ruleId) ?? 0) + 1);
 
@@ -99,8 +73,50 @@ function run(repoArg: string, packPath: string, dryRun: boolean, io: Io): number
     `  ${dryRun ? "would change" : "changed"} ${changed.length} files, ${edits.length} edits`,
     ...[...perRule].map(([id, n]) => `    ${id}: ${n}`),
     `  needs manual review: ${manual.length}`,
-    ...manual.map((m) => `    ${m.file}:${m.line} [${m.ruleId}] ${m.note}`),
+    ...manual.map((m) => `    ${m.rel}:${m.line} [${m.ruleId}] ${m.note}`),
   ];
+  io.out(lines.join("\n") + "\n");
+  return 0;
+}
+
+/** The given 1-based line plus `radius` lines above and below, numbered, with the line marked. */
+export function codeContext(text: string, line: number, radius = CONTEXT_RADIUS): string {
+  const all = text.split("\n").map((l) => (l.endsWith("\r") ? l.slice(0, -1) : l));
+  const from = Math.max(1, line - radius);
+  const to = Math.min(all.length, line + radius);
+  const width = String(to).length;
+  const out: string[] = [];
+  for (let n = from; n <= to; n++) {
+    out.push(`  ${n === line ? ">" : " "} ${String(n).padStart(width)} | ${all[n - 1]}`);
+  }
+  return out.join("\n");
+}
+
+function fixManual(repoArg: string, packPath: string, dryRun: boolean, io: Io): number {
+  const pack = loadPack(packPath);
+  const files = scanRepo(resolve(repoArg), pack);
+  const items = files.flatMap((f) => f.manual.map((m) => ({ ...m, file: f })));
+  const pending = files.filter((f) => f.after !== f.before).length;
+
+  const lines = [`migrate-pack fix-manual: ${pack.name}${dryRun ? " (dry run)" : ""}`, `  pack: ${packPath}`];
+  if (pending > 0) {
+    lines.push(
+      `  note: ${pending} file(s) still have automatic edits pending (run \`migrate-pack run\` first).`,
+      `        Code below is shown as it will look after those edits.`,
+    );
+  }
+  lines.push("");
+
+  items.forEach((item, i) => {
+    lines.push(
+      `[${i + 1}/${items.length}] ${item.file.rel}:${item.line}  ${item.ruleId}`,
+      `  ${item.note}`,
+      codeContext(item.file.after, item.line),
+      "",
+    );
+  });
+
+  lines.push(`${items.length} manual item(s). Nothing was changed: fix-manual is read-only for now.`);
   io.out(lines.join("\n") + "\n");
   return 0;
 }
@@ -127,13 +143,18 @@ export function main(argv: string[], io: Io = defaultIo): number {
       io.out(version() + "\n");
       return 0;
     }
-    if (positionals[0] !== "run" || !values.repo) {
+
+    const command = positionals[0];
+    if ((command !== "run" && command !== "fix-manual") || !values.repo) {
       io.err(HELP);
       return 2;
     }
 
     const packPath = values.pack ? resolve(values.pack) : DEFAULT_PACK_PATH;
-    return run(values.repo, packPath, values["dry-run"] === true, io);
+    const dryRun = values["dry-run"] === true;
+    return command === "run"
+      ? run(values.repo, packPath, dryRun, io)
+      : fixManual(values.repo, packPath, dryRun, io);
   } catch (err) {
     io.err(`migrate-pack: ${(err as Error).message}\n`);
     return 1;

@@ -37,10 +37,56 @@ test("without --pack, the bundled rules.yaml is used, independent of the current
   }
 });
 
+test("fix-manual prints each manual item with surrounding code and writes nothing", () => {
+  const repo = mkdtempSync(join(tmpdir(), "migrate-pack-repo-"));
+  const source = [
+    `const express = require("express");`,
+    `const app = express();`,
+    `app.get("/users", (req, res) => {`,
+    `  const id = req.param("id");`,
+    `  res.json({ id });`,
+    `});`,
+    ``,
+  ].join("\n");
+  writeFileSync(join(repo, "server.js"), source);
+
+  try {
+    const { code, out, err } = capture(["fix-manual", "--repo", repo]);
+
+    assert.equal(err, "");
+    assert.equal(code, 0);
+    assert.ok(out.includes("[1/1] server.js:4  req-param-removed"), out);
+    assert.ok(out.includes("Use req.params, req.body or req.query"), out);
+    assert.ok(out.includes(`  > 4 |   const id = req.param("id");`), out);
+    assert.ok(out.includes(`    2 | const app = express();`), out);
+    assert.ok(out.includes(`    6 | });`), out);
+    assert.ok(!out.includes(`const express = require("express");`), "only 2 lines above are shown");
+    assert.equal(readFileSync(join(repo, "server.js"), "utf8"), source, "fix-manual must not write");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test("--help and --version", () => {
   const help = capture(["--help"]);
   assert.equal(help.code, 0);
-  assert.ok(help.out.includes("migrate-pack run --repo <path>"), help.out);
+  assert.equal(help.err, "");
+
+  // Each command has its own usage line (spacing between columns is free) with all its options.
+  const lines = help.out.split("\n").map((l) => l.trim());
+  for (const command of ["run", "fix-manual"]) {
+    const usage = lines.find((l) => l.startsWith(`migrate-pack ${command} `));
+    assert.ok(usage, `no usage line for "${command}" in:\n${help.out}`);
+    for (const option of ["--repo <path>", "--pack", "--dry-run"]) {
+      assert.ok(usage.includes(option), `usage line for "${command}" lacks ${option}: ${usage}`);
+    }
+  }
+
+  // Each option is also explained in the options list.
+  for (const option of ["--repo", "--pack", "--dry-run", "--help", "--version"]) {
+    assert.ok(lines.some((l) => l.startsWith(option) || l.startsWith(`-h, ${option}`) || l.startsWith(`-v, ${option}`)),
+      `option ${option} is not documented in:\n${help.out}`);
+  }
 
   const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf8"));
   const version = capture(["--version"]);
