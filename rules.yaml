@@ -47,7 +47,8 @@ rules:
   #                 only when obj is an object/array/string/template/true/false/null literal.
   #                 res.json(404, someVar) is NOT rewritten: if someVar is a number at runtime,
   #                 Express 4 uses it as the status, so the rewrite could change behavior.
-  # status-last is checked first, so res.json(200, 201) -> res.status(201).json(200), as in Express 4.
+  # If BOTH args are number literals (e.g. res.json(200, 201)) nothing is rewritten;
+  # res-json-two-args-unhandled reports it, because we can't tell which one is the status.
   - id: res-json-status-arg
     description: Replace res.json(obj, status) / res.json(status, obj) with res.status(status).json(obj) (both signatures removed in Express 5)
     type: reorder-args

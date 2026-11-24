@@ -52,6 +52,9 @@ function reorderPlan(call: CallExpression, spec: ReorderSpec): { status: Node; v
   if (args.length !== 2) return undefined;
   const [first, second] = args;
 
+  // Both numbers (e.g. res.json(200, 201)): too ambiguous to rewrite; left for manual review.
+  if (Node.isNumericLiteral(first) && Node.isNumericLiteral(second)) return undefined;
+
   if (spec.forms.includes("status-last") && Node.isNumericLiteral(second)) {
     return { status: second, value: first };
   }

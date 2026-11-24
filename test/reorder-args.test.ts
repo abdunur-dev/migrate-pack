@@ -45,7 +45,7 @@ test("res-json-status-arg (status-first) reorders res.json(<number>, <non-number
     `res.json(404, { a: 1 }, extra);`, //         5  3 args: unchanged
     `other.json(201, x);`, //                     6  not res: unchanged
     `res.json(404, count);`, //                   7  count may be a number at runtime: unchanged
-    `res.json(200, 201);`, //                     8  2nd is a number: status-last wins (Express 4 semantics)
+    `res.json(200, 201);`, //                     8  both numbers: unchanged (reported as manual elsewhere)
     `res.json({ ok: true }, 201);`, //            9  status-last still applies
     ``,
   ].join("\n");
@@ -58,7 +58,7 @@ test("res-json-status-arg (status-first) reorders res.json(<number>, <non-number
     `res.json(404, { a: 1 }, extra);`,
     `other.json(201, x);`,
     `res.json(404, count);`,
-    `res.status(201).json(200);`,
+    `res.json(200, 201);`,
     `res.status(201).json({ ok: true });`,
     ``,
   ].join("\n");
@@ -66,5 +66,26 @@ test("res-json-status-arg (status-first) reorders res.json(<number>, <non-number
   const result = transformSource(before, [rule], "a.js");
 
   assert.equal(result.after, after);
-  assert.deepEqual(result.edits.map((e) => e.line), [1, 2, 3, 8, 9]);
+  assert.deepEqual(result.edits.map((e) => e.line), [1, 2, 3, 9]);
+});
+
+test("res.json with two number literals is not edited and is reported as manual", () => {
+  const code = [
+    `res.json(200, 201);`,
+    `res.json(201, 200);`,
+    ``,
+  ].join("\n");
+
+  const rules = pack.rules.filter((r) => r.id === "res-json-status-arg" || r.id === "res-json-two-args-unhandled");
+  const result = transformSource(code, rules, "a.js");
+
+  assert.equal(result.after, code);
+  assert.deepEqual(result.edits, []);
+  assert.deepEqual(
+    result.manual.map((m) => [m.ruleId, m.line]),
+    [
+      ["res-json-two-args-unhandled", 1],
+      ["res-json-two-args-unhandled", 2],
+    ],
+  );
 });
