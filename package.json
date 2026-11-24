@@ -1,0 +1,27 @@
+{
+  "name": "migrate-pack",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Apply YAML migration packs to a JS/TS repo using AST edits (ts-morph).",
+  "bin": {
+    "migrate-pack": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "tsx src/cli.ts",
+    "test": "node --import tsx --test test/app-del.test.ts test/renames.test.ts test/reorder-args.test.ts test/manual.test.ts"
+  },
+  "dependencies": {
+    "diff": "^8.0.2",
+    "ts-morph": "^24.0.0",
+    "yaml": "^2.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

@@ -1,0 +1,79 @@
+name: express-4-to-5
+rules:
+  - id: app-del-to-delete
+    description: Replace app.del(...) with app.delete(...) (app.del was removed in Express 5)
+    type: deterministic
+    match:
+      call: app.del
+    replace:
+      method: delete
+
+  - id: req-accepts-charset-plural
+    description: Replace req.acceptsCharset(...) with req.acceptsCharsets(...) (singular form removed in Express 5)
+    type: deterministic
+    match:
+      call: req.acceptsCharset
+    replace:
+      method: acceptsCharsets
+
+  - id: req-accepts-encoding-plural
+    description: Replace req.acceptsEncoding(...) with req.acceptsEncodings(...) (singular form removed in Express 5)
+    type: deterministic
+    match:
+      call: req.acceptsEncoding
+    replace:
+      method: acceptsEncodings
+
+  - id: req-accepts-language-plural
+    description: Replace req.acceptsLanguage(...) with req.acceptsLanguages(...) (singular form removed in Express 5)
+    type: deterministic
+    match:
+      call: req.acceptsLanguage
+    replace:
+      method: acceptsLanguages
+
+  - id: res-sendfile-camelcase
+    description: Replace res.sendfile(...) with res.sendFile(...) (res.sendfile removed in Express 5)
+    type: deterministic
+    match:
+      call: res.sendfile
+    replace:
+      method: sendFile
+
+  # reorder-args: res.json(obj, <number>) -> res.status(<number>).json(obj).
+  # Applied only when there are exactly 2 arguments and the second is a number literal.
+  # Anything else (variable status, status first, 1 or 3 args) is left untouched.
+  - id: res-json-status-arg
+    description: Replace res.json(obj, status) with res.status(status).json(obj) (signature removed in Express 5)
+    type: reorder-args
+    match:
+      call: res.json
+    reorder:
+      chain: status
+
+  # manual: reported as file + line, never edited.
+  - id: res-json-two-args-unhandled
+    description: res.json(...) with 2 arguments that res-json-status-arg could not safely rewrite
+    type: manual
+    match:
+      call: res.json
+      args: 2
+      exceptReorderable: true
+    note: Express 5 removed res.json(obj, status). Rewrite by hand as res.status(status).json(obj) once you have confirmed which argument is the status.
+
+  - id: req-param-removed
+    description: req.param(name) was removed in Express 5
+    type: manual
+    match:
+      call: req.param
+    note: Use req.params, req.body or req.query explicitly; which one depends on where the value comes from.
+
+  - id: route-wildcard
+    description: Route path strings containing "*" behave differently in Express 5 (path-to-regexp v8)
+    type: manual
+    match:
+      routeString:
+        objects: [app, router]
+        methods: [all, delete, get, head, options, patch, post, put, use, route]
+        contains: "*"
+    note: Wildcards must be named in Express 5 (e.g. "/*splat" instead of "/*"); check the route still matches what you intend.
